@@ -1,6 +1,6 @@
 # zhangxiaoshuai_skill
 
-我的个人skill分享集合。
+我的个人 skill 分享集合。技能基于标准 SKILL.md 格式，兼容 Claude Code、OpenClaw（龙虾）等所有支持 skill 机制的 AI Agent。
 
 ## 技能列表
 
@@ -12,20 +12,35 @@
 
 ## 使用方法
 
-将需要的技能目录复制到 Claude Code 的 skills 目录即可：
+### 方式一：ClawHub 安装（推荐）
+
+技能已发布到 [ClawHub](https://clawhub.ai/zhangxiaoshuai98)，所有兼容 Agent 均可一键安装：
 
 ```bash
-# Linux / macOS
-cp -r ctrip-compare ~/.claude/skills/
+# 安装 ClawHub CLI
+npm i -g clawhub
 
-# Windows (PowerShell)
-Copy-Item -Recurse ctrip-compare "$env:USERPROFILE\.claude\skills\"
+# 搜索并安装技能
+clawhub install ctrip-compare
 ```
 
-安装后在 Claude Code 中输入相关指令即可触发技能。
+### 方式二：手动安装
+
+将技能目录复制到对应 Agent 的 skills 目录：
+
+```bash
+# Claude Code
+cp -r ctrip-compare ~/.claude/skills/
+
+# OpenClaw（龙虾）
+cp -r ctrip-compare ~/.openclaw/skills/
+```
+
+安装后在对话中输入相关指令即可触发技能。
+
 
 ---
-# 下面详细介绍每一个skill具体的使用方法
+# skill具体的使用方法
 
 ## ctrip-compare
 
@@ -97,7 +112,7 @@ https://vacations.ctrip.com/tour/detail/p64166362s34
 
 ```
 ctrip-compare/
-├── skill.md           # 技能定义与工作流程
+├── SKILL.md           # 技能定义与工作流程
 └── scripts/
     ├── search.py      # 搜索页产品 URL 提取
     └── extract.py     # 产品详情数据提取
