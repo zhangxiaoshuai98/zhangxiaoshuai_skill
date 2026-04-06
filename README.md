@@ -6,7 +6,7 @@
 
 | 技能 | 说明 |
 |------|------|
-| [ctrip-compare](#ctrip-compare---携程跟团游产品对比分析) | 携程跟团游产品快速对比分析 |
+| [ctrip-compare](#ctrip-compare) | 携程跟团游产品快速对比分析 |
 
 ---
 
