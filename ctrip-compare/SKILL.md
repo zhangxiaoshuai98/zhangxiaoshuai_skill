@@ -32,19 +32,148 @@ flowchart LR
     G --> H["生成Markdown文档"]
 ```
 
+## 用户使用指南
+
+当用户询问"怎么用"、"如何使用"时，根据以下内容回答。
+
+### 前置依赖
+
+1. **Python 3.8+**
+2. **Playwright**：`pip install playwright`
+3. **Chromium 系浏览器**（Chrome / Edge / Brave 均可）
+
+### 使用方式
+
+#### 方式一：搜索列表页批量分析
+
+1. 打开携程跟团游页面 https://vacations.ctrip.com/grouptravel
+2. 搜索目的地并进行筛选（出发城市、出行天数、价格区间等）
+3. 筛选完成后，复制浏览器地址栏中的 URL，发给 Agent 即可
+
+示例：
+```
+分析这个搜索页的产品：https://vacations.ctrip.com/list/...
+```
+
+Agent 会自动提取列表页中所有产品的详细数据并生成对比分析。
+
+#### 方式二：指定产品详情页对比
+
+如果已经看好了几个具体的跟团游产品，直接将它们的详情页 URL 发给 Agent：
+
+```
+帮我对比这几个携程产品：
+https://vacations.ctrip.com/tour/detail/p30642209s34
+https://vacations.ctrip.com/tour/detail/p64166362s34
+```
+
+### 注意事项
+
+- 浏览器需提前以调试模式启动：`chrome --remote-debugging-port=9222`（或 `msedge` / `brave`）
+- Windows 用户如遇 `python3` 命令不存在，请使用 `python` 代替
+- 提取价格前需确认出发日期，不同日期价格可能差异较大
+
 ## 跨平台注意
 
 - **Windows 用户**：命令中 `python3` 请替换为 `python`
 - **浏览器**：支持 Chrome / Edge / Brave 等所有 Chromium 系浏览器
 
-## Step 0：判断URL类型
+## 浏览器管理
+
+### 提取前：检查 CDP 端口
+
+运行 extract.py 或 search.py 前，**必须先检查 CDP 端口 9222 是否可用**：
+
+```bash
+# 检查端口是否可用
+curl -s http://localhost:9222/json/version
+```
+
+- **返回 JSON（含 Browser 名称）**：浏览器已正确启动，可继续
+- **连接失败**：浏览器未按指定端口启动，需要处理（见下方）
+
+### 浏览器未正确启动时的处理
+
+当 CDP 端口 9222 连接失败时，**先检测用户本地安装了哪些浏览器**，再向用户提问：
+
+```bash
+# 检测本地 Chromium 系浏览器（Windows）
+where chrome 2>nul && echo "Chrome: 已安装"
+where msedge 2>nul && echo "Edge: 已安装"
+where brave 2>nul && echo "Brave: 已安装"
+
+# 检测本地浏览器（macOS）
+ls /Applications/ | grep -i "chrome\|edge\|brave"
+
+# 检测本地浏览器（Linux）
+which google-chrome chromium-browser microsoft-edge brave-browser 2>/dev/null
+```
+
+根据检测结果，向用户提问（示例）：
+
+```
+⚠️ 浏览器未以调试模式启动（CDP 端口 9222 不可用）。
+
+检测到您本地安装了：Chrome、Edge
+
+是否可以使用 [检测到的第一个浏览器] 重新启动？我可以自动帮您：
+1. 终止该浏览器的所有进程（含后台残留）
+2. 以调试模式重新启动
+
+或者您希望使用其他浏览器？
+```
+
+**自动处理流程**（确认后执行）：
+
+```bash
+# Step 1: 终止指定浏览器的所有进程（含后台残留）
+# Windows:  taskkill /F /IM chrome.exe          # 只终止选中的浏览器
+# macOS:    pkill -f "Google Chrome"
+# Linux:    pkill -f google-chrome
+
+# Step 2: 以调试模式重新启动
+# Windows:  start chrome --remote-debugging-port=9222
+# macOS:    open -a "Google Chrome" --args --remote-debugging-port=9222
+# Linux:    google-chrome --remote-debugging-port=9222 &
+
+# Step 3: 验证端口已启动
+curl -s http://localhost:9222/json/version
+```
+
+> **重要**：必须先 kill 指定浏览器的所有进程再重启。仅关闭窗口不够，后台进程可能仍在运行，导致新启动的浏览器无法绑定 9222 端口。
+
+**用户选择手动操作时**，给出指引：
+
+```bash
+# 1. 彻底关闭浏览器（关闭窗口不够，后台进程可能仍在）
+#    方法一：命令行终止
+#    Windows:  taskkill /F /IM chrome.exe   (替换为实际浏览器进程名)
+#    macOS:    pkill -f "Google Chrome"
+#    Linux:    pkill -f chrome
+#
+#    方法二：任务管理器（Ctrl+Shift+Esc），找到浏览器进程，全部结束
+
+# 2. 重新以调试模式启动
+#    Windows:  chrome --remote-debugging-port=9222
+#    macOS:    open -a "Google Chrome" --args --remote-debugging-port=9222
+#    Linux:    google-chrome --remote-debugging-port=9222
+
+# 3. 验证
+curl -s http://localhost:9222/json/version
+```
+
+### 提取后
+
+无需额外操作（Playwright 通过 CDP 直连，不启动额外进程）
+
+## Step 1：判断URL类型
 
 用户提供的URL有两种类型，处理方式不同：
 
 | URL类型 | 匹配规则 | 处理方式 |
 |---------|---------|---------|
-| 搜索列表页 | `vacations.ctrip.com/list/` 开头 | 先运行 `search.py` 提取产品URL，再进入 Step 1 |
-| 产品详情页 | `vacations.ctrip.com/tour/detail/` 或 `vacations.ctrip.com/travel/detail/` | 直接进入 Step 1 |
+| 搜索列表页 | `vacations.ctrip.com/list/` 开头 | 先运行 `search.py` 提取产品URL，再进入 Step 2 |
+| 产品详情页 | `vacations.ctrip.com/tour/detail/` 或 `vacations.ctrip.com/travel/detail/` | 直接进入 Step 2 |
 
 如果是搜索列表页，运行 `search.py` 提取产品URL：
 
@@ -60,7 +189,7 @@ python3 ~/.claude/skills/ctrip-compare/scripts/search.py "<搜索页URL>" --max 
 
 **注意**：search.py 运行完毕后，浏览器标签页已关闭，可直接继续运行 extract.py，无需重启浏览器。
 
-## Step 0.5：确认出发日期
+## Step 2：确认出发日期
 
 如果用户没有给出出发日期，**必须先询问**：
 
@@ -70,7 +199,7 @@ python3 ~/.claude/skills/ctrip-compare/scripts/search.py "<搜索页URL>" --max 
 
 只有确认出发日期后，才开始提取数据。
 
-## Step 1：一键提取数据
+## Step 3：一键提取数据
 
 使用 Python 脚本 `scripts/extract.py`，通过 Playwright 直连浏览器 CDP 接口，一次性提取所有 URL 的数据。
 
@@ -111,7 +240,17 @@ python3 ~/.claude/skills/ctrip-compare/scripts/extract.py 30 ~/ctrip/ctrip_20260
 - **价格提取失败**：脚本会使用页面默认价格
 - **行程提取失败**：检查输出文件中行程部分是否为空，可能需要手动补充
 
-## Step 2：并行压缩摘要
+## Step 4：并行压缩摘要
+
+> **必须使用子 Agent（Agent tool）执行压缩任务，严禁在主 Agent 中执行。**
+>
+> 原因：压缩需要读取大量原始文件，在主 Agent 中执行会导致上下文窗口爆炸（即使不超限，长上下文也会导致后续分析质量显著下降）。子 Agent 有独立的上下文空间，不影响主对话质量。
+>
+> **如果子 Agent 遇到问题无法完成**，向用户说明情况并给出选项：
+> 1. 在主 Agent 中继续执行（需告知：会导致上下文膨胀，后续分析质量可能下降）
+> 2. 手动操作或其他方式
+>
+> 由用户决定，不要擅自选择。
 
 原始文件每个约 400-500 行，10 个产品约 4500 行 / 165KB。直接全部读入会占用大量上下文（约 50K tokens）。通过子 Agent 并行压缩，压缩后仅约 9%（每个产品 ~40 行），支持一次性读入分析。
 
@@ -207,7 +346,7 @@ Day1: 【日程标题】...
 - 50 个产品：约 2000 行（约 60K tokens，仍在可接受范围）
 - 原始文件保留在 `raw/` 目录，用户追问细节时可随时读取
 
-## Step 3：询问用户偏好
+## Step 5：询问用户偏好
 
 数据提取和压缩完毕后，向用户询问：
 
@@ -226,7 +365,7 @@ Day1: 【日程标题】...
 （可以说"都看"或列出优先级）
 ```
 
-## Step 4：分析对比（读取摘要文件）
+## Step 6：分析对比（读取摘要文件）
 
 用 `read` 工具读取 `summary/` 目录下的压缩摘要文件，一次性全部读入后分析：
 
@@ -249,7 +388,7 @@ Day1: 【日程标题】...
 | 口碑 | 评分 + 点评数 |
 | 去重 | 比较不同产品的行程是否完全相同 |
 
-## Step 5：生成 Markdown 文档
+## Step 7：生成 Markdown 文档
 
 使用 Write 工具，将最终对比分析保存为 Markdown 文件。
 
@@ -294,8 +433,3 @@ Day1: 【日程标题】...
 - 用 `> **提示**` 或 `> **⚠️**` 标注重要提示
 - 评分参考价值提示（点评太少的不够可靠）
 - 每次调用技能会在同一项目目录下生成：`raw/` 子目录存放过程资料，根目录存放最终 md
-
-## 浏览器管理
-
-- 提取前：确保 CDP 端口 9222 可用（没有被其他程序占用）
-- 提取后：无需额外操作（Playwright 通过 CDP 直连，不启动额外进程）
