@@ -69,7 +69,7 @@ https://vacations.ctrip.com/tour/detail/p64166362s34
 
 ### 注意事项
 
-- 浏览器需提前以调试模式启动：`chrome --remote-debugging-port=9222`（或 `msedge` / `brave`）
+- 浏览器需提前以调试模式启动（详见下方"浏览器管理"章节）
 - Windows 用户如遇 `python3` 命令不存在，请使用 `python` 代替
 - 提取价格前需确认出发日期，不同日期价格可能差异较大
 
@@ -111,16 +111,44 @@ curl -s http://localhost:9222/json/version
 **自动处理流程**（确认后执行）：
 
 1. **终止该浏览器的所有进程**（含后台残留）。根据当前操作系统和目标浏览器，使用对应的 kill 命令。仅终止选中的浏览器，不要影响其他浏览器
-2. **等待 2 秒**，确保进程完全退出、端口释放
-3. **以调试模式重新启动**该浏览器，指定 `--remote-debugging-port=9222` 参数。根据操作系统和浏览器类型使用对应的启动命令
+2. **等待 3 秒**，确保进程完全退出、端口释放
+3. **以调试模式重新启动**该浏览器，**必须包含以下关键参数**：
+   - `--remote-debugging-port=9222`：CDP 调试端口
+   - `--user-data-dir=<独立目录>`：指定独立的用户数据目录（**必须**，否则 Chrome 会复用已有实例，导致调试端口不生效）
+   - `--no-first-run`：跳过首次运行提示
+   - `--no-default-browser-check`：跳过默认浏览器检查
 4. **验证端口已启动**：`curl -s http://localhost:9222/json/version`
+
+### 启动命令参考
+
+根据操作系统和浏览器类型，使用对应的启动命令：
+
+**Windows Chrome**：
+```bash
+cmd.exe /c 'start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\temp\chrome_debug" --no-first-run --no-default-browser-check'
+```
+
+**Windows Edge**：
+```bash
+cmd.exe /c 'start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --user-data-dir="C:\temp\edge_debug" --no-first-run --no-default-browser-check'
+```
+
+**macOS/Linux Chrome**：
+```bash
+google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome_debug --no-first-run --no-default-browser-check &
+```
+
+> **关键说明**：`--user-data-dir` 参数**不可省略**。如果省略，Chrome 会尝试复用正在运行的实例（即使进程已被 kill，残留的 lock 文件也可能导致复用），此时 `--remote-debugging-port` 参数会被静默忽略，CDP 端口不可用。指定独立的用户数据目录可彻底避免此问题。
 
 > **重要**：必须先 kill 指定浏览器的所有进程再重启。仅关闭窗口不够，后台进程可能仍在运行，导致新启动的浏览器无法绑定 9222 端口。
 
 **用户选择手动操作时**，给出指引：
 
 1. 彻底关闭浏览器（关闭窗口不够，后台进程可能仍在），可通过命令行终止或任务管理器结束所有该浏览器进程
-2. 重新以调试模式启动浏览器，添加 `--remote-debugging-port=9222` 参数
+2. 重新以调试模式启动浏览器，**必须包含以下所有参数**：
+   ```
+   chrome --remote-debugging-port=9222 --user-data-dir="C:\temp\chrome_debug" --no-first-run --no-default-browser-check
+   ```
 3. 验证：`curl -s http://localhost:9222/json/version`
 
 ### 提取后
@@ -166,7 +194,7 @@ python3 ~/.claude/skills/ctrip-compare/scripts/search.py "<搜索页URL>" --max 
 
 ### 前置条件
 
-- 浏览器已启动（Chrome/Edge/Brave 等 Chromium 浏览器，带 `--remote-debugging-port=9222`）
+- 浏览器已启动（Chrome/Edge/Brave 等 Chromium 浏览器，带 `--remote-debugging-port=9222 --user-data-dir=<独立目录> --no-first-run --no-default-browser-check`）
 - Playwright 已安装（`pip install playwright`）
 
 ### 运行命令
@@ -206,7 +234,13 @@ python3 ~/.claude/skills/ctrip-compare/scripts/extract.py 30 ~/ctrip/ctrip_20260
 > **必须使用子 Agent（Agent tool）执行压缩任务，严禁在主 Agent 中执行。**
 >
 > 原因：压缩需要读取大量原始文件，在主 Agent 中执行会导致上下文窗口爆炸（即使不超限，长上下文也会导致后续分析质量显著下降）。子 Agent 有独立的上下文空间，不影响主对话质量。
->
+
+### 子 Agent 运行模式
+
+**Claude Code 环境**：必须使用前景模式（不设置 `run_in_background: true`），且在一条消息中同时发起多个 Agent tool 调用以实现并行。原因：Claude Code 的后台 Agent 工具权限不会弹出用户确认提示，Read/Write/Bash 会被自动拒绝导致任务失败。前景 Agent 在一条消息中多个同时发起同样可以并行执行，且权限提示正常弹出。
+
+**其他环境**：可尝试后台模式，如果子 Agent 因权限问题失败，必须提醒用户预先配置子 Agent 的工具权限（如 settings.json 中的 permissions.allow 规则等），确保 Read/Write/Bash 等工具可正常使用。
+
 > **如果子 Agent 遇到问题无法完成**，向用户说明情况并给出选项：
 > 1. 在主 Agent 中继续执行（需告知：会导致上下文膨胀，后续分析质量可能下降）
 > 2. 手动操作或其他方式

@@ -25,16 +25,17 @@ def _ensure_utf8_output():
 
 _ensure_utf8_output()
 
-async def extract_product(browser, url, day, output_dir):
+async def extract_product(browser, url, day, output_dir, month=None):
     """提取单个产品的完整数据"""
     context = browser.contexts[0]
     page = await context.new_page()
 
+    date_label = f"{month}月{day}号" if month else f"{day}号"
     result = {
         "url": url,
         "product_id": "",
         "title": "",
-        "departure_date": f"{day}号",
+        "departure_date": date_label,
         "price": "",
         "score": "",
         "supplier": "",
@@ -50,16 +51,65 @@ async def extract_product(browser, url, day, output_dir):
         await page.wait_for_timeout(3000)  # 额外等待动态内容加载
 
         # 2. 点击出发日期获取真实价格
-        print(f"  [2/5] 点击出发日期({day}号)")
+        print(f"  [2/5] 点击出发日期({date_label})")
         try:
-            # 找到日期元素并点击
+            # 如果指定了月份，先切换到目标月份
+            if month:
+                # 查找目标月份标签（如 "2026年5月"）并点击
+                month_elements = await page.query_selector_all('.calendar_month')
+                month_clicked = False
+                for mel in month_elements:
+                    month_text = (await mel.inner_text()).strip()
+                    # 匹配 "X月" 或 "XXXX年X月"
+                    if f"{month}月" in month_text:
+                        # 检查是否已经选中
+                        cls = await mel.get_attribute('class') or ''
+                        if 'selected' not in cls:
+                            await mel.click()
+                            await page.wait_for_timeout(1500)
+                            print(f"       已切换到 {month}月")
+                        month_clicked = True
+                        break
+
+                if not month_clicked:
+                    # 尝试点击下月按钮翻到目标月份
+                    for _ in range(3):
+                        next_btn = await page.query_selector('.contorl_month_next')
+                        if next_btn:
+                            await next_btn.click()
+                            await page.wait_for_timeout(1000)
+                            # 重新检查是否出现目标月份
+                            month_elements = await page.query_selector_all('.calendar_month')
+                            for mel in month_elements:
+                                month_text = (await mel.inner_text()).strip()
+                                if f"{month}月" in month_text:
+                                    await mel.click()
+                                    await page.wait_for_timeout(1500)
+                                    print(f"       翻页后切换到 {month}月")
+                                    month_clicked = True
+                                    break
+                        if month_clicked:
+                            break
+
+            # 在当前可见的日历中查找目标日期
             date_elements = await page.query_selector_all('.date_num')
+            clicked = False
             for el in date_elements:
                 text = (await el.inner_text()).strip()
-                if text == str(day):
+                if text == str(day).zfill(2) or text == str(day):
+                    # 检查日期是否可用（祖父元素的 disabled 状态）
+                    grandparent_cls = await el.evaluate(
+                        "el => el.parentElement && el.parentElement.parentElement ? el.parentElement.parentElement.className : ''"
+                    )
+                    if 'disabled' in grandparent_cls:
+                        continue  # 跳过不可用日期
                     await el.click()
                     await page.wait_for_timeout(3000)
+                    clicked = True
+                    print(f"       已点击 {day}号")
                     break
+            if not clicked:
+                print(f"       未找到可用的 {day}号日期，使用默认价格")
         except Exception as e:
             print(f"       点击日期失败: {e}，使用默认价格")
 
@@ -97,10 +147,18 @@ async def extract_product(browser, url, day, output_dir):
                 result['price'] = m.group(1)
                 break
 
-        # 评分
+        # 评分 - 多种模式匹配
+        # 优先匹配产品评分（X分 Y条点评）
         score_match = re.search(r'([\d.]+)分.*?(\d+)条点评', body_text)
         if score_match:
             result['score'] = f"{score_match.group(1)}/{score_match.group(2)}条"
+        elif '本产品暂无点评' in body_text:
+            result['score'] = '暂无点评'
+        else:
+            # 尝试匹配导游/司机评分
+            guide_scores = re.findall(r'([\d.]+)分', body_text)
+            if guide_scores:
+                result['score'] = f"导游评分:{guide_scores[0]}"
 
         # 供应商
         supplier_match = re.search(r'供应商\s*\n?\s*(.+?)[\n,，]', body_text)
@@ -159,17 +217,28 @@ async def extract_product(browser, url, day, output_dir):
 async def main():
     if len(sys.argv) < 4:
         print("用法: python extract.py <出发日期> <输出目录> <url1> [url2] ...")
-        print("示例: python extract.py 30 ~/ctrip/ctrip_20260430_云南/raw https://vacations.ctrip.com/tour/detail/p30642209s34")
+        print("  出发日期格式: DD (仅天) 或 M-D (月-天，如 5-1)")
+        print("示例: python extract.py 5-1 ~/ctrip/ctrip_20260501_云南/raw https://vacations.ctrip.com/tour/detail/p30642209s34")
         sys.exit(1)
 
-    day = int(sys.argv[1])
+    # 解析日期参数：支持 "D"（仅天）或 "M-D"（月-天）
+    date_arg = sys.argv[1]
+    if '-' in date_arg:
+        parts = date_arg.split('-')
+        month = int(parts[0])
+        day = int(parts[1])
+    else:
+        month = None
+        day = int(date_arg)
+
     output_dir = sys.argv[2]
     urls = sys.argv[3:]
 
     os.makedirs(output_dir, exist_ok=True)
 
+    date_label = f"{month}月{day}号" if month else f"{day}号"
     print(f"=== 携程产品提取 ===")
-    print(f"出发日期: {day}号")
+    print(f"出发日期: {date_label}")
     print(f"产品数量: {len(urls)}")
     print(f"输出目录: {output_dir}")
     print()
@@ -192,7 +261,7 @@ async def main():
         results = []
         for i, url in enumerate(urls):
             print(f"[{i+1}/{len(urls)}] 处理中...")
-            r = await extract_product(browser, url, day, output_dir)
+            r = await extract_product(browser, url, day, output_dir, month=month)
             results.append(r)
             if i < len(urls) - 1:
                 await asyncio.sleep(1)  # URL之间短暂等待
