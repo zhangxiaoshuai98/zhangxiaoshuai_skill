@@ -96,71 +96,32 @@ curl -s http://localhost:9222/json/version
 
 当 CDP 端口 9222 连接失败时，**先检测用户本地安装了哪些浏览器**，再向用户提问：
 
-```bash
-# 检测本地 Chromium 系浏览器（Windows）
-where chrome 2>nul && echo "Chrome: 已安装"
-where msedge 2>nul && echo "Edge: 已安装"
-where brave 2>nul && echo "Brave: 已安装"
-
-# 检测本地浏览器（macOS）
-ls /Applications/ | grep -i "chrome\|edge\|brave"
-
-# 检测本地浏览器（Linux）
-which google-chrome chromium-browser microsoft-edge brave-browser 2>/dev/null
-```
-
-根据检测结果，向用户提问（示例）：
-
 ```
 ⚠️ 浏览器未以调试模式启动（CDP 端口 9222 不可用）。
 
-检测到您本地安装了：Chrome、Edge
+检测到您本地安装了：[检测到的第一个浏览器]
 
-是否可以使用 [检测到的第一个浏览器] 重新启动？我可以自动帮您：
+是否可以使用 [检测到的第一个浏览器] 重新启动？如果您同意，我会帮您：
 1. 终止该浏览器的所有进程（含后台残留）
 2. 以调试模式重新启动
 
-或者您希望使用其他浏览器？
+或者您希望手动操作？
 ```
 
 **自动处理流程**（确认后执行）：
 
-```bash
-# Step 1: 终止指定浏览器的所有进程（含后台残留）
-# Windows:  taskkill /F /IM chrome.exe          # 只终止选中的浏览器
-# macOS:    pkill -f "Google Chrome"
-# Linux:    pkill -f google-chrome
-
-# Step 2: 以调试模式重新启动
-# Windows:  start chrome --remote-debugging-port=9222
-# macOS:    open -a "Google Chrome" --args --remote-debugging-port=9222
-# Linux:    google-chrome --remote-debugging-port=9222 &
-
-# Step 3: 验证端口已启动
-curl -s http://localhost:9222/json/version
-```
+1. **终止该浏览器的所有进程**（含后台残留）。根据当前操作系统和目标浏览器，使用对应的 kill 命令。仅终止选中的浏览器，不要影响其他浏览器
+2. **等待 2 秒**，确保进程完全退出、端口释放
+3. **以调试模式重新启动**该浏览器，指定 `--remote-debugging-port=9222` 参数。根据操作系统和浏览器类型使用对应的启动命令
+4. **验证端口已启动**：`curl -s http://localhost:9222/json/version`
 
 > **重要**：必须先 kill 指定浏览器的所有进程再重启。仅关闭窗口不够，后台进程可能仍在运行，导致新启动的浏览器无法绑定 9222 端口。
 
 **用户选择手动操作时**，给出指引：
 
-```bash
-# 1. 彻底关闭浏览器（关闭窗口不够，后台进程可能仍在）
-#    方法一：命令行终止
-#    Windows:  taskkill /F /IM chrome.exe   (替换为实际浏览器进程名)
-#    macOS:    pkill -f "Google Chrome"
-#    Linux:    pkill -f chrome
-#
-#    方法二：任务管理器（Ctrl+Shift+Esc），找到浏览器进程，全部结束
-
-# 2. 重新以调试模式启动
-#    Windows:  chrome --remote-debugging-port=9222
-#    macOS:    open -a "Google Chrome" --args --remote-debugging-port=9222
-#    Linux:    google-chrome --remote-debugging-port=9222
-
-# 3. 验证
-curl -s http://localhost:9222/json/version
-```
+1. 彻底关闭浏览器（关闭窗口不够，后台进程可能仍在），可通过命令行终止或任务管理器结束所有该浏览器进程
+2. 重新以调试模式启动浏览器，添加 `--remote-debugging-port=9222` 参数
+3. 验证：`curl -s http://localhost:9222/json/version`
 
 ### 提取后
 
